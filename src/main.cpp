@@ -17,6 +17,15 @@ enum State
   EmergencyStop
 };
 
+int currentStateStart = 0;
+
+enum CheckDirectionStatus
+{
+  Right,
+  Left,
+  Ok
+};
+
 State state = SearchingDirection;
 
 Servo seringe;
@@ -73,12 +82,57 @@ unsigned int getLightLevel(int pin)
   return analogRead(pin);
 }
 
+CheckDirectionStatus checkDirection()
+{
+  float minDistLeft = 0;
+  float minDistRight = 0;
+  int start = millis();
+  turnLeft();
+  while (millis() - start <= 1500)
+  {
+    minDistLeft = min(getDistance(), minDistLeft);
+  }
+  start = millis();
+  turnRight();
+  while (millis() - start <= 1500)
+  {
+    minDistLeft = min(getDistance(), minDistLeft);
+  }
+  start = millis();
+  while (millis() - start <= 1500)
+  {
+    minDistRight = min(getDistance(), minDistRight);
+  }
+  turnLeft();
+  start = millis();
+  while (millis() - start <= 1500)
+  {
+    minDistRight = min(getDistance(), minDistRight);
+  }
+  stop();
+
+  if (minDistLeft >= 20 && minDistRight >= 20)
+  {
+    return Ok;
+  }
+  else if (minDistRight <= minDistLeft)
+  {
+    return Left;
+  }
+  else
+  {
+    return Right;
+  }
+}
+
 void setup()
 {
   Serial.begin(9600);
   pinMode(A7, INPUT);
   pinMode(A6, INPUT);
   pinMode(A5, INPUT);
+
+  delay(3000);
 }
 
 void loop()
@@ -89,7 +143,28 @@ void loop()
     stop();
     if (getLightLevel(LIGHT_FRONT) >= getLightLevel(LIGHT_LEFT) && getLightLevel(LIGHT_FRONT) >= getLightLevel(LIGHT_RIGHT))
     {
+
+      CheckDirectionStatus directionStatus = checkDirection();
+      while (directionStatus != Ok)
+      {
+        if (directionStatus == Right)
+        {
+          turnRight();
+          delay(2000);
+          stop();
+        }
+        else if (directionStatus == Left)
+        {
+          turnLeft();
+          delay(2000);
+          stop();
+        }
+
+        directionStatus = checkDirection();
+      }
+
       state = Moving;
+      currentStateStart = millis();
     }
     else if (getLightLevel(LIGHT_LEFT) >= LIGHT_PERCENT_DIFF * getLightLevel(LIGHT_RIGHT))
     {
@@ -101,16 +176,24 @@ void loop()
       turnRight();
       delay(50);
     }
+
     break;
   case Moving:
     forward();
     if (getDistance() <= 55 && (getLightLevel(LIGHT_FRONT) >= LIGHT_TRESHOLD || getLightLevel(LIGHT_RIGHT) >= LIGHT_TRESHOLD || getLightLevel(LIGHT_LEFT) >= LIGHT_TRESHOLD))
     {
-      state = Shooting;
+      state = EmergencyStop;
+      currentStateStart = millis();
     }
     else if (getDistance() <= 15)
     {
+      state = EmergencyStop;
+      currentStateStart = millis();
+    }
+    else if (millis() - currentStateStart >= 3000)
+    {
       state = SearchingDirection;
+      currentStateStart = millis();
     }
     delay(50);
     break;
@@ -131,7 +214,8 @@ void loop()
     shootWater();
     delay(5000);
     stopWater();
-    state == EmergencyStop;
+    state = EmergencyStop;
+    currentStateStart = millis();
     break;
   default:
     break;
